@@ -1,0 +1,64 @@
+/* ==========================================================================
+   DEVELOPER BRANDING COMPONENT - CLINICAL FOOTER
+   Preserves: "Developed by Kyaw Moe Naing"
+   ========================================================================== */
+
+.developer-branding-footer {
+  width: 100%;
+  padding: 1.5rem 0 2rem 0;
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.developer-branding-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-xs);
+  transition: all var(--transition-fast);
+}
+
+.developer-branding-content:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-border-hover);
+}
+
+.developer-credit-text {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.developed-by-label {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.developer-name {
+  color: var(--color-text-main);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.developer-logo-wrapper {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.km-monogram-svg {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  display: block;
+}

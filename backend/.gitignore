@@ -1,0 +1,14 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+venv/
+.venv/
+
