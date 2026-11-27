@@ -13,7 +13,9 @@ from app.models.user import User
 from app.models.donor import Donor
 from app.core.auth_dependencies import get_current_user
 from app.core.permissions import require_roles
+from app.core.security import hash_password
 from app.services.audit_service import create_audit_log
+from sqlalchemy.exc import IntegrityError
 from app.crud.user import get_user_by_id
 from app.crud.donor import (
     create_donor,
@@ -88,13 +90,112 @@ async def create_donor_profile(
 ):
     """
     Register a new donor profile.
-    - Admins and Staff can register a profile for any user_id specified.
-    - Regular users can register a profile for themselves.
-    - Validates against duplicate user donor profiles and duplicate phone numbers.
+    - Full Donor Registration: If email & password are provided, Admin/Staff can register
+      both a new User account and the associated Donor profile in one atomic database transaction.
+    - Existing User Profile Link: If user_id is provided, Admins and Staff can register a profile for any user_id.
+    - Self-registration: Regular users can register a profile for themselves.
+    - Validates against duplicate user donor profiles, duplicate phone numbers, and duplicate emails.
     """
+    is_admin_or_staff = current_user.role in ["admin", "staff"]
+
+    # 1. Check for Full Registration (User + Donor profile created atomically)
+    is_full_registration = bool(donor_in.email and donor_in.password)
+
+    if is_full_registration:
+        if not is_admin_or_staff:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only staff or administrators can register new donor accounts",
+            )
+
+        clean_full_name = donor_in.full_name.strip() if donor_in.full_name else ""
+        if len(clean_full_name) < 3:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Full Name must be at least 3 characters long",
+            )
+
+        clean_email = donor_in.email.strip().lower()
+
+        # Check duplicate email
+        email_res = await db.execute(select(User).where(User.email == clean_email))
+        if email_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A user with this email address already exists",
+            )
+
+        # Check duplicate phone
+        existing_phone = await get_donor_by_phone(db, donor_in.phone)
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A donor with this phone number is already registered",
+            )
+
+        # Atomic transaction: Create User + Donor profile
+        try:
+            hashed_pwd = hash_password(donor_in.password)
+            new_user = User(
+                full_name=clean_full_name,
+                email=clean_email,
+                hashed_password=hashed_pwd,
+                role="donor",  # Enforce donor role; cannot assign privileged roles
+                is_active=True,
+            )
+            db.add(new_user)
+            await db.flush()
+            await db.refresh(new_user)
+
+            new_donor = await create_donor(
+                db=db,
+                donor_data=donor_in,
+                user_id=new_user.id,
+                auto_commit=False,
+            )
+
+            # Audit log within same transaction
+            ip_addr = request.client.host if request.client else None
+            await create_audit_log(
+                db=db,
+                action="donor_registered_full",
+                entity_type="donor",
+                entity_id=new_donor.id,
+                user_id=current_user.id,
+                description=f"Full donor account registered: {clean_email} (User ID {new_user.id}, Blood Group: {new_donor.blood_group})",
+                ip_address=ip_addr,
+            )
+
+            await db.commit()
+            await db.refresh(new_donor)
+            await db.refresh(new_user)
+
+        except IntegrityError as ie:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Duplicate record detected: email or phone number is already in use",
+            )
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create donor registration: {str(e)}",
+            )
+
+        # Event hook: Generate notification for donor registration
+        try:
+            from app.services.notification_service import notify_donor_registered
+            await notify_donor_registered(db, new_donor, acting_user=current_user)
+        except Exception:
+            pass
+
+        return _build_donor_response(new_donor, new_user)
+
+    # 2. Existing profile registration workflow (link to existing user)
     target_user_id = current_user.id
     if donor_in.user_id is not None:
-        if current_user.role not in ["admin", "staff"] and donor_in.user_id != current_user.id:
+        if not is_admin_or_staff and donor_in.user_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only staff or administrators can register donor profiles for other users",
@@ -148,7 +249,6 @@ async def create_donor_profile(
         from app.services.notification_service import notify_donor_registered
         await notify_donor_registered(db, new_donor, acting_user=current_user)
     except Exception:
-        # Logging or silent continuation so business workflow remains resilient
         pass
 
     return _build_donor_response(new_donor, target_user)

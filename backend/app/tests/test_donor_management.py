@@ -88,7 +88,10 @@ async def main():
     # Setup: Admin, Staff, Donor User 1, Donor User 2
     async with AsyncSessionLocal() as session:
         # Existing admin check (by role, any active admin)
-        res = await session.execute(select(User).where(User.role == "admin", User.is_active == True))
+        res = await session.execute(
+            select(User).where(
+            User.role == "admin", User.is_active == True
+            ))
         admin = res.scalars().first()
         if not admin:
             raise RuntimeError("No active admin user found in the database")
@@ -475,6 +478,173 @@ async def main():
         )
         pass_5_4 = (status == 404)
         results["Error Handling: Delete non-existent donor returns 404"] = pass_5_4
+
+        # ====================================================================
+        # 6. FULL DONOR REGISTRATION (USER + DONOR PROFILE ATOMIC TRANSACTION)
+        # ====================================================================
+        print("\n--- Testing Full Donor Registration Workflow ---")
+
+        # 6.1 Regular donor user cannot use full registration endpoint
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Unauthorized User",
+                "email": "unauth.donor@example.com",
+                "password": "ValidPass123!",
+                "phone": "+1-555-8881",
+                "date_of_birth": "1995-03-10",
+                "gender": "male",
+                "blood_group": "B+",
+                "address": "123 Restricted Street",
+            },
+            token=tokens["donor_1"],
+        )
+        pass_6_1 = (status == 403)
+        results["Full Registration: Regular donor blocked from registering others (403 Forbidden)"] = pass_6_1
+
+        # 6.2 Admin successfully registers full donor account (User + Profile in 1 step)
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Charlie Full Registered",
+                "email": "charlie.full@example.com",
+                "password": "SecurePassword123!",
+                "phone": "+1-555-8882",
+                "date_of_birth": "1993-07-20",
+                "gender": "male",
+                "blood_group": "O+",
+                "address": "456 Atomic Hospital Blvd",
+            },
+            token=tokens["admin"],
+        )
+        pass_6_2 = (
+            status == 201
+            and body.get("email") == "charlie.full@example.com"
+            and body.get("full_name") == "Charlie Full Registered"
+            and body.get("phone") == "+1-555-8882"
+            and body.get("blood_group") == "O+"
+        )
+        if pass_6_2:
+            created_donor_ids.append(body["id"])
+            created_user_ids.append(body["user_id"])
+        results["Full Registration: Admin registers new donor with User account (201 Created)"] = pass_6_2
+
+        # 6.3 Verify login works for the newly registered donor
+        status, login_res = await dispatch_request(
+            "POST",
+            "/api/v1/auth/login",
+            body={
+                "email": "charlie.full@example.com",
+                "password": "SecurePassword123!",
+            },
+        )
+        pass_6_3 = (status == 200 and "access_token" in login_res)
+        results["Full Registration: Login succeeds for newly created donor account (200 OK)"] = pass_6_3
+
+        # 6.4 Staff successfully registers full donor account
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Diana Staff Registered",
+                "email": "diana.staff.registered@example.com",
+                "password": "StaffPass456!",
+                "phone": "+1-555-8883",
+                "date_of_birth": "1990-11-15",
+                "gender": "female",
+                "blood_group": "AB+",
+                "address": "789 Clinical Center Lane",
+            },
+            token=tokens["staff"],
+        )
+        pass_6_4 = (
+            status == 201
+            and body.get("email") == "diana.staff.registered@example.com"
+            and body.get("phone") == "+1-555-8883"
+        )
+        if pass_6_4:
+            created_donor_ids.append(body["id"])
+            created_user_ids.append(body["user_id"])
+        results["Full Registration: Staff registers new donor with User account (201 Created)"] = pass_6_4
+
+        # 6.5 Duplicate email rejection (409 Conflict)
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Duplicate Email Donor",
+                "email": "charlie.full@example.com",
+                "password": "AnotherPassword123!",
+                "phone": "+1-555-8884",
+                "date_of_birth": "1992-04-10",
+                "gender": "other",
+                "blood_group": "A+",
+                "address": "999 Duplication Ave",
+            },
+            token=tokens["admin"],
+        )
+        pass_6_5 = (status == 409)
+        results["Full Registration: Duplicate email rejected (409 Conflict)"] = pass_6_5
+
+        # 6.6 Duplicate phone rejection (409 Conflict)
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Duplicate Phone Donor",
+                "email": "unique.phone.donor@example.com",
+                "password": "AnotherPassword123!",
+                "phone": "+1-555-8882",  # Already used by Charlie
+                "date_of_birth": "1992-04-10",
+                "gender": "other",
+                "blood_group": "A+",
+                "address": "999 Duplication Ave",
+            },
+            token=tokens["admin"],
+        )
+        pass_6_6 = (status == 409)
+        results["Full Registration: Duplicate phone rejected (409 Conflict)"] = pass_6_6
+
+        # 6.7 Invalid email format rejection (422)
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Invalid Email Donor",
+                "email": "invalid-email-no-at-domain",
+                "password": "ValidPassword123!",
+                "phone": "+1-555-8885",
+                "date_of_birth": "1992-04-10",
+                "gender": "female",
+                "blood_group": "B-",
+                "address": "123 Invalid Email Lane",
+            },
+            token=tokens["admin"],
+        )
+        pass_6_7 = (status == 422)
+        results["Full Registration: Invalid email format rejected (422)"] = pass_6_7
+
+        # 6.8 Weak password rejection (422)
+        status, body = await dispatch_request(
+            "POST",
+            "/api/v1/donors/",
+            body={
+                "full_name": "Weak Pass Donor",
+                "email": "weakpass@example.com",
+                "password": "short",
+                "phone": "+1-555-8886",
+                "date_of_birth": "1992-04-10",
+                "gender": "male",
+                "blood_group": "O-",
+                "address": "123 Weak Password Lane",
+            },
+            token=tokens["admin"],
+        )
+        pass_6_8 = (status == 422)
+        results["Full Registration: Weak password rejected (422)"] = pass_6_8
+
 
     finally:
         # Cleanup

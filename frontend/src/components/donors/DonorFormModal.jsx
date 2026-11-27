@@ -4,6 +4,9 @@ import './DonorModals.css';
 
 export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting }) => {
   const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    password: '',
     phone: '',
     date_of_birth: '',
     gender: 'male',
@@ -14,10 +17,14 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
   });
 
   const [formErrors, setFormErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (donor) {
       setFormData({
+        full_name: donor.full_name || '',
+        email: donor.email || '',
+        password: '',
         phone: donor.phone || '',
         date_of_birth: donor.date_of_birth || '',
         gender: donor.gender || 'male',
@@ -28,6 +35,9 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
       });
     } else {
       setFormData({
+        full_name: '',
+        email: '',
+        password: '',
         phone: '',
         date_of_birth: '',
         gender: 'male',
@@ -38,12 +48,40 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
       });
     }
     setFormErrors({});
+    setShowPassword(false);
   }, [donor, isOpen]);
 
   if (!isOpen) return null;
 
   const validate = () => {
     const errors = {};
+
+    // For new donor registration, validate full_name, email, and password
+    if (!donor) {
+      if (!formData.full_name.trim()) {
+        errors.full_name = 'Full name is required';
+      } else if (formData.full_name.trim().length < 3) {
+        errors.full_name = 'Full name must be at least 3 characters';
+      }
+
+      if (!formData.email.trim()) {
+        errors.email = 'Email address is required';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+        errors.email = 'Invalid email address format';
+      }
+
+      if (!formData.password) {
+        errors.password = 'Password is required';
+      } else {
+        if (formData.password.length < 8) {
+          errors.password = 'Password must be at least 8 characters long';
+        } else if (!/[A-Za-z]/.test(formData.password)) {
+          errors.password = 'Password must contain at least one letter';
+        } else if (!/\d/.test(formData.password)) {
+          errors.password = 'Password must contain at least one digit';
+        }
+      }
+    }
 
     if (!formData.phone.trim()) {
       errors.phone = 'Phone number is required';
@@ -88,6 +126,7 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!validate()) return;
 
     const payload = {
@@ -98,12 +137,23 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
       address: formData.address.trim(),
     };
 
-    if (formData.user_id.trim()) {
-      payload.user_id = parseInt(formData.user_id.trim(), 10);
-    }
-
-    if (donor && formData.last_donation_date) {
-      payload.last_donation_date = formData.last_donation_date;
+    if (!donor) {
+      if (formData.full_name.trim()) {
+        payload.full_name = formData.full_name.trim();
+      }
+      if (formData.email.trim()) {
+        payload.email = formData.email.trim();
+      }
+      if (formData.password) {
+        payload.password = formData.password;
+      }
+      if (formData.user_id.trim()) {
+        payload.user_id = parseInt(formData.user_id.trim(), 10);
+      }
+    } else {
+      if (formData.last_donation_date) {
+        payload.last_donation_date = formData.last_donation_date;
+      }
     }
 
     onSubmit(payload);
@@ -120,12 +170,76 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
             className="modal-close-btn"
             onClick={onClose}
             aria-label="Close modal"
+            disabled={isSubmitting}
           >
             ✕
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="modal-body donor-form" noValidate>
+          {!donor && (
+            <>
+              <div className="form-group">
+                <label className="form-label" htmlFor="full_name">
+                  Full Name *
+                </label>
+                <input
+                  id="full_name"
+                  type="text"
+                  className={`form-input ${formErrors.full_name ? 'input-error' : ''}`}
+                  placeholder="e.g. John Doe"
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  disabled={isSubmitting}
+                />
+                {formErrors.full_name && <span className="field-error">{formErrors.full_name}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="email">
+                  Email Address *
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  className={`form-input ${formErrors.email ? 'input-error' : ''}`}
+                  placeholder="donor@example.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  disabled={isSubmitting}
+                />
+                {formErrors.email && <span className="field-error">{formErrors.email}</span>}
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="password">
+                  Password *
+                </label>
+                <div className="password-input-wrapper">
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className={`form-input ${formErrors.password ? 'input-error' : ''}`}
+                    placeholder="Min 8 characters (letters & numbers)"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {formErrors.password && <span className="field-error">{formErrors.password}</span>}
+              </div>
+            </>
+          )}
+
           <div className="form-group">
             <label className="form-label" htmlFor="phone">
               Phone Number *
@@ -200,20 +314,22 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
               </select>
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="user_id">
-                User ID (optional)
-              </label>
-              <input
-                id="user_id"
-                type="number"
-                className="form-input"
-                placeholder="Defaults to self"
-                value={formData.user_id}
-                onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                disabled={isSubmitting || Boolean(donor)}
-              />
-            </div>
+            {!donor && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="user_id">
+                  User ID (optional)
+                </label>
+                <input
+                  id="user_id"
+                  type="number"
+                  className="form-input"
+                  placeholder="Auto-created"
+                  value={formData.user_id}
+                  onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
+                  disabled={isSubmitting}
+                />
+              </div>
+            )}
           </div>
 
           <div className="form-group">
@@ -278,3 +394,4 @@ export const DonorFormModal = ({ isOpen, onClose, onSubmit, donor, isSubmitting 
 };
 
 export default DonorFormModal;
+

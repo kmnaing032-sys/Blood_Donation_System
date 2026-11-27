@@ -311,9 +311,12 @@ describe('Donors Page Component', () => {
     // Click save without entering inputs
     fireEvent.click(screen.getByTestId('submit-donor-btn'));
 
+    expect(await screen.findByText(/full name is required/i)).toBeDefined();
+    expect(await screen.findByText(/email address is required/i)).toBeDefined();
+    expect(await screen.findByText(/password is required/i)).toBeDefined();
     expect(await screen.findByText(/phone number is required/i)).toBeDefined();
     expect(await screen.findByText(/date of birth is required/i)).toBeDefined();
-    expect(await screen.findByText(/address is required/i)).toBeDefined();
+    expect(await screen.findByText(/^address is required$/i)).toBeDefined();
     expect(donorService.createDonor).not.toHaveBeenCalled();
   });
 
@@ -339,13 +342,22 @@ describe('Donors Page Component', () => {
 
     fireEvent.click(screen.getByTestId('add-donor-btn'));
 
+    fireEvent.change(screen.getByLabelText(/full name/i), {
+      target: { value: 'New Test Donor' },
+    });
+    fireEvent.change(screen.getByLabelText(/email address/i), {
+      target: { value: 'newdonor@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText(/^password \*/i), {
+      target: { value: 'SecurePass123!' },
+    });
     fireEvent.change(screen.getByLabelText(/phone number/i), {
       target: { value: '+1-555-9999' },
     });
     fireEvent.change(screen.getByLabelText(/date of birth/i), {
       target: { value: '1998-04-12' },
     });
-    fireEvent.change(screen.getByLabelText(/address/i), {
+    fireEvent.change(screen.getByLabelText(/^address \*/i), {
       target: { value: '789 Maple Drive, City' },
     });
 
@@ -354,6 +366,9 @@ describe('Donors Page Component', () => {
     await waitFor(() => {
       expect(donorService.createDonor).toHaveBeenCalledWith(
         expect.objectContaining({
+          full_name: 'New Test Donor',
+          email: 'newdonor@example.com',
+          password: 'SecurePass123!',
           phone: '+1-555-9999',
           date_of_birth: '1998-04-12',
           address: '789 Maple Drive, City',
@@ -362,6 +377,38 @@ describe('Donors Page Component', () => {
     });
 
     expect(await screen.findByText(/donor registered successfully/i)).toBeDefined();
+  });
+
+  it('toggles password visibility in Add Donor form', async () => {
+    donorService.getDonors.mockResolvedValue({
+      items: mockDonors,
+      total: 2,
+      page: 1,
+      page_size: 10,
+      total_pages: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <Donors />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('add-donor-btn')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId('add-donor-btn'));
+
+    const passwordInput = screen.getByLabelText(/^password \*/i);
+    expect(passwordInput.type).toBe('password');
+
+    const toggleBtn = screen.getByRole('button', { name: /show password/i });
+    fireEvent.click(toggleBtn);
+    expect(passwordInput.type).toBe('text');
+
+    fireEvent.click(screen.getByRole('button', { name: /hide password/i }));
+    expect(passwordInput.type).toBe('password');
   });
 
   it('opens Edit modal and submits updated donor profile', async () => {

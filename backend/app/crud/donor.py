@@ -46,6 +46,7 @@ async def create_donor(
     db: AsyncSession,
     donor_data: DonorCreate,
     user_id: int,
+    auto_commit: bool = True,
 ) -> Donor:
     """Create a new donor record in PostgreSQL."""
     donor = Donor(
@@ -57,9 +58,14 @@ async def create_donor(
         address=donor_data.address,
     )
     db.add(donor)
-    await db.commit()
-    await db.refresh(donor)
+    if auto_commit:
+        await db.commit()
+        await db.refresh(donor)
+    else:
+        await db.flush()
+        await db.refresh(donor)
     return donor
+
 
 
 async def get_all_donors(

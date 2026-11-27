@@ -53,6 +53,47 @@ class DonorCreate(DonorBase):
         default=None,
         description="User ID to associate this donor profile with. Admins/Staff can specify, or defaults to current user.",
     )
+    # Optional fields for full donor registration (User + Donor profile in 1 atomic step)
+    full_name: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=150,
+        description="Full legal name of the donor account to create",
+    )
+    email: str | None = Field(
+        default=None,
+        description="Valid email address for the donor user account",
+    )
+    password: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        description="Password for the new donor user account (min 8 chars, letter + digit)",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        clean = v.strip().lower()
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean):
+            raise ValueError("Invalid email format")
+        return clean
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
 
 
 class DonorUpdate(BaseModel):
